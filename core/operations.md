@@ -618,31 +618,46 @@ class Weather
 This way, we expose a route that will do… nothing. Note that the controller does not even need to exist.
 
 It's almost done, we have just one final issue: our fake item operation is visible in the API docs.
-To remove it, we will need to [decorate the Swagger documentation](swagger.md#overriding-the-openapi-specification).
+To remove it, we will need to [decorate the OpenApi documentation](swagger.md#overriding-the-openapi-specification).
 Then, remove the route from the decorator:
 
 ```php
 <?php
-// src/Swagger/SwaggerDecorator.php
 
-namespace App\Swagger;
 
-use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+namespace App\OpenApi;
 
-final class SwaggerDecorator implements NormalizerInterface
+
+use ApiPlatform\Core\OpenApi\Factory\OpenApiFactoryInterface;
+use ApiPlatform\Core\OpenApi\Model\Paths;
+use ApiPlatform\Core\OpenApi\OpenApi;
+
+class OpenApiFactory implements OpenApiFactoryInterface
 {
-    public function __construct(
-        private NormalizerInterface $decorated
-    ) {}
+    private OpenApiFactoryInterface $decorated;
 
-    public function normalize($object, string $format = null, array $context = [])
+    private const PATHS_TO_REMOVE_FROM_DOC = [
+        '/weathers/{id}',
+    ];
+
+    public function __construct(OpenApiFactoryInterface $decorated)
     {
-        $docs = $this->decorated->normalize($object, $format, $context);
+        $this->decorated = $decorated;
+    }
 
-        // If a prefix is configured on API Platform's routes, it must appear here.
-        unset($docs['paths']['/weathers/{id}']);
+    public function __invoke(array $context = []): OpenApi
+    {
+        $openApi = $this->decorated->__invoke($context);
+        $originalPathsArray = $openApi->getPaths()->getPaths();
+        $newPaths = new Paths();
 
-        return $docs;
+        foreach ($originalPathsArray as $pathName => $pathItem) {
+            if (!in_array($pathName, self::PATHS_TO_REMOVE_FROM_DOC, true)) {
+                $newPaths->addPath($pathName, $pathItem);
+            }
+        }
+
+        return $openApi->withPaths($newPaths);
     }
 
     // ...
